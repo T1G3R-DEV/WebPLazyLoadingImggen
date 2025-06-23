@@ -3,7 +3,7 @@ from PIL import Image
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
-def generate_images(inputs):
+def generate_images(inputs, html_base_path):
     folder = os.path.dirname(inputs[0]) if len(inputs) == 1 else os.path.commonpath(inputs)
     preview_folder = os.path.join(folder, "previews")
     os.makedirs(preview_folder, exist_ok=True)
@@ -16,7 +16,7 @@ def generate_images(inputs):
 
         try:
             with Image.open(input_path) as img:
-                # Use original size; just compress
+                # Keep original resolution
                 tiny_path = os.path.join(preview_folder, f"{base_name}-tiny.webp")
                 small_path = os.path.join(preview_folder, f"{base_name}-small.webp")
                 full_path = os.path.join(preview_folder, f"{base_name}-full.webp")
@@ -25,12 +25,13 @@ def generate_images(inputs):
                 img.save(small_path, "WEBP", quality=40)
                 img.save(full_path, "WEBP", quality=85)
 
+            # Create relative paths in HTML
             html_blocks.append(f'''
-<a href="{input_path}">
+<a href="{os.path.relpath(input_path, folder)}">
   <img
-    src="previews/{base_name}-tiny.webp"
-    data-src1="previews/{base_name}-small.webp"
-    data-src2="previews/{base_name}-full.webp"
+    src="{html_base_path}/{base_name}-tiny.webp"
+    data-src1="{html_base_path}/{base_name}-small.webp"
+    data-src2="{html_base_path}/{base_name}-full.webp"
     alt="{filename}"
     loading="lazy"
     style="max-width: 100%; height: auto;"
@@ -41,7 +42,6 @@ def generate_images(inputs):
         except Exception as e:
             print(f"Failed to process {input_path}: {e}")
 
-    # Full HTML (optional use)
     html_output = f"""<script>
 function loadHighResImages() {{
   const images = document.querySelectorAll("img.progressive-image");
@@ -65,12 +65,11 @@ function loadHighResImages() {{
 }}
 document.addEventListener("DOMContentLoaded", loadHighResImages);
 </script>
-
 """ + "\n".join(html_blocks)
 
     return html_output
 
-# === GUI Setup ===
+# === GUI Actions ===
 def select_files_or_folder():
     options = [('Image files', '*.jpg *.jpeg *.png *.webp')]
     files = filedialog.askopenfilenames(title="Select images", filetypes=options)
@@ -78,23 +77,26 @@ def select_files_or_folder():
         folder = filedialog.askdirectory(title="Or select a folder")
         if not folder:
             return
-        # All matching images in the folder
         files = [os.path.join(folder, f) for f in os.listdir(folder)
                  if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
 
     selected_path.set(f"{len(files)} file(s) selected")
+
+    html_path_input = html_base_path.get().strip() or "./img/previews"
+    html_path_input = html_path_input.rstrip("/")
+
     try:
-        html = generate_images(files)
+        html = generate_images(files, html_path_input)
         html_textbox.delete("1.0", tk.END)
         html_textbox.insert(tk.END, html)
         messagebox.showinfo("Done", "Images processed and HTML generated.")
     except Exception as e:
         messagebox.showerror("Error", f"Something went wrong:\n{e}")
 
-# === GUI ===
+# === GUI Setup ===
 app = tk.Tk()
 app.title("WebP Lazy Gallery Generator")
-app.geometry("700x600")
+app.geometry("720x640")
 app.resizable(True, True)
 
 tk.Label(app, text="Select image files or folder:", font=("Arial", 12)).pack(pady=10)
@@ -103,8 +105,14 @@ tk.Button(app, text="Select Files or Folder", command=select_files_or_folder, bg
 selected_path = tk.StringVar()
 tk.Label(app, textvariable=selected_path, fg="blue").pack(pady=5)
 
+# HTML Path Input
+tk.Label(app, text="HTML path to previews (e.g. ./img/previews):").pack()
+html_base_path = tk.StringVar(value="./img/previews")
+tk.Entry(app, textvariable=html_base_path, width=50).pack(pady=5)
+
+# HTML Output
 tk.Label(app, text="Generated HTML (copy into your site):").pack()
-html_textbox = scrolledtext.ScrolledText(app, wrap=tk.WORD, width=80, height=25)
+html_textbox = scrolledtext.ScrolledText(app, wrap=tk.WORD, width=85, height=25)
 html_textbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
 app.mainloop()
